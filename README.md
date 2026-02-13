@@ -7,9 +7,9 @@ Welcome to the Catalyst Game Panel template repository! This repository contains
 ### 🎮 Games
 The `games/` directory contains templates for various game servers, organized by genre:
 
-- **`games/action/`** - Action game servers (e.g., CS:GO, Call of Duty, etc.)
-- **`games/adventure/`** - Adventure game servers
-- **`games/fps/`** - First-Person Shooter game servers
+- **`games/action/`** - Action game servers (e.g., GTA V, Left 4 Dead 2, etc.)
+- **`games/adventure/`** - Adventure game servers (e.g., Valheim, Don't Starve Together, etc.)
+- **`games/fps/`** - First-Person Shooter game servers (e.g., CS:GO, CS2, Squad, etc.)
 - **`games/mmo/`** - Massively Multiplayer Online game servers (e.g., World of Warcraft, etc.)
 - **`games/moba/`** - Multiplayer Online Battle Arena servers (e.g., Dota 2, etc.)
 - **`games/racing/`** - Racing game servers
