@@ -1,0 +1,52 @@
+{
+    "_comment": "Catalyst template — standalone FastDL (fast download) web server for HL1/Source engine games, built on the Caddy static file server. Hand-maintained Catalyst egg (PTDL_v2 format, importable by Pterodactyl-style panels).",
+    "meta": {
+        "version": "PTDL_v2",
+        "update_url": null
+    },
+    "exported_at": "2026-08-31T00:00:00+00:00",
+    "name": "FastDL (Caddy) - HL1/Source Content Server",
+    "author": "catalyst",
+    "description": "Standalone FastDL (fast download) web server for Half-Life 1 and Source engine games. Serves client download content (maps, models, sounds, materials) from ./fastdl/<gamedir>/ with byte-Range support, 304 revalidation, correct MIME types and a browsable directory index — the HTTP features engines need to download custom content at line speed. Works with Counter-Strike 1.6, Garry's Mod, CS:S, TF2, HL2:DM, Sven Co-op and any game supporting sv_downloadurl.\n\nUpload content via SFTP into ./fastdl/<gamedir>/ (e.g. fastdl/cstrike/ or fastdl/garrysmod/), then set on each game server: sv_downloadurl \"http://<node-ip>:<this-port>\".\n\nThe runtime is a single static Caddy binary on a minimal Alpine image — no database, no scripting, ~64 MB RAM. HL1/Source FastDL is plain HTTP; put a reverse proxy or CDN in front for HTTPS (it must pass Range requests through).",
+    "features": [],
+    "docker_images": {
+        "Alpine 3.22": "alpine:3.22"
+    },
+    "file_denylist": [],
+    "startup": "./caddy file-server --root ./fastdl --listen \":{{SERVER_PORT}}\" --browse --no-compress -- {{FD_MAX_CONNECTIONS}}",
+    "config": {
+        "files": "{}",
+        "startup": "{\"done\": \"Caddy serving static files on :\"}",
+        "logs": "{}",
+        "stop": "^C"
+    },
+    "scripts": {
+        "installation": {
+            "script": "#!/bin/bash\n# FastDL (Caddy) install script — Catalyst template\n# Downloads the Caddy static binary and creates the FastDL docroot.\n# Server files: /mnt/server (symlinked to /data by the Catalyst install wrapper)\n\nset -o pipefail\n\nCADDY_VERSION=\"${FD_CADDY_VERSION:-2.11.4}\"\n\n# Resolve 'latest' to a concrete version via the GitHub API.\nif [ \"${CADDY_VERSION}\" = \"latest\" ]; then\n    CADDY_VERSION=\"$(curl -fsSL https://api.github.com/repos/caddyserver/caddy/releases/latest | grep -m1 -oE '\"tag_name\": *\"v[0-9.]+\"' | grep -oE '[0-9]+\\.[0-9]+\\.[0-9]+')\"\n    if [ -z \"${CADDY_VERSION}\" ]; then\n        echo \"Could not resolve 'latest' Caddy version, falling back to 2.11.4\"\n        CADDY_VERSION=\"2.11.4\"\n    fi\nfi\n\n# Map machine architecture to the Caddy release artifact.\nARCH=\"$(uname -m)\"\ncase \"${ARCH}\" in\n    x86_64)        CADDY_ARCH=\"amd64\" ;;\n    aarch64|arm64) CADDY_ARCH=\"arm64\" ;;\n    armv7l)        CADDY_ARCH=\"armv7\" ;;\n    *) echo \"Unsupported architecture: ${ARCH}\"; exit 1 ;;\nesac\n\necho \"Installing Caddy v${CADDY_VERSION} for linux/${CADDY_ARCH}...\"\n\nmkdir -p /mnt/server/fastdl/cstrike /mnt/server/fastdl/garrysmod\ncd /mnt/server || exit 1\n\ncurl -fSL --retry 3 --retry-delay 2 -o /tmp/caddy.tar.gz \\\n    \"https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_${CADDY_ARCH}.tar.gz\" \\\n    || { echo \"ERROR: failed to download Caddy v${CADDY_VERSION}\"; exit 1; }\n\n# Verify the tarball against the published checksums (skipped if checksums.txt is unavailable).\ncurl -fsSL -o /tmp/caddy-checksums.txt \\\n    \"https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_checksums.txt\" || true\nEXPECTED_SHA=\"$(awk -v f=\"caddy_${CADDY_VERSION}_linux_${CADDY_ARCH}.tar.gz\" '$2==f {print $1}' /tmp/caddy-checksums.txt 2>/dev/null)\"\nif [ -n \"${EXPECTED_SHA}\" ]; then\n    ACTUAL_SHA=\"$(sha512sum /tmp/caddy.tar.gz | awk '{print $1}')\"\n    if [ \"${EXPECTED_SHA}\" != \"${ACTUAL_SHA}\" ]; then\n        echo \"ERROR: checksum mismatch for the Caddy tarball\"\n        echo \"  expected: ${EXPECTED_SHA}\"\n        echo \"  actual:   ${ACTUAL_SHA}\"\n        exit 1\n    fi\n    echo \"SHA-512 checksum verified.\"\nfi\n\n# Extract only the static binary — it runs on both the Debian install image\n# (glibc) and the Alpine runtime image (musl) because it has no dynamic deps.\nmkdir -p /tmp/caddy-install\ntar -xzf /tmp/caddy.tar.gz -C /tmp/caddy-install caddy\nmv -f /tmp/caddy-install/caddy /mnt/server/caddy\nchmod +x /mnt/server/caddy\nrm -rf /tmp/caddy-install /tmp/caddy.tar.gz /tmp/caddy-checksums.txt\n\n# Sanity check: the binary must execute in the install container.\nif ! /mnt/server/caddy version > /dev/null 2>&1; then\n    echo \"ERROR: Caddy binary failed to execute\"\n    exit 1\nfi\necho \"Installed $(/mnt/server/caddy version)\"\n\n# Seed the docroot with a README describing the expected layout.\ncat > /mnt/server/fastdl/README.txt <<'EOF'\nFastDL docroot — served at http://<server-ip>:<server-port>/\n\nPlace downloadable game content in a folder named after the game's\nmod directory, mirroring the game server's own directory layout:\n\n  fastdl/cstrike/maps/de_dust2.bsp         <- CS 1.6 (clients fetch cstrike/maps/...)\n  fastdl/garrysmod/maps/rp_downtown.bsp    <- Garry's Mod\n  fastdl/tf2/maps/..., fastdl/css/maps/... <- any other HL1/Source game\n\nOptional: pre-compress large files as .bz2 next to the originals\n(map.bsp + map.bsp.bz2). HL1 engines fetch the .bz2 automatically and\nclients decompress locally, saving most of the bandwidth.\n\nOn each game server, set:\n  sv_downloadurl \"http://<this-server-ip>:<this-server-port>\"\nthen changelevel (or restart the map) for it to take effect.\nEOF\n\necho \"FastDL install complete.\"\n",
+            "container": "ghcr.io/ptero-eggs/installers:debian",
+            "entrypoint": "bash"
+        }
+    },
+    "variables": [
+        {
+            "name": "Caddy Version",
+            "description": "Caddy release to install (e.g. 2.11.4), or 'latest' to resolve the newest release at install time. Change the value and reinstall the server to upgrade.",
+            "env_variable": "FD_CADDY_VERSION",
+            "default_value": "2.11.4",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:32",
+            "field_type": "text"
+        },
+        {
+            "name": "Max Connections",
+            "description": "Concurrent client download connections accepted before refusing new ones. 0 = unlimited (the internal file cache auto-scales). Recommended: roughly 3x the number of simultaneous downloads you expect.",
+            "env_variable": "FD_MAX_CONNECTIONS",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|integer|min:0|max:100000",
+            "field_type": "number"
+        }
+    ]
+}

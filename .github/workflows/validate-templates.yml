@@ -1,0 +1,130 @@
+name: Validate Templates
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    name: Validate egg JSON & install scripts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Discover egg JSON files
+        id: discover
+        run: |
+          # The Catalyst panel batch importer discovers files whose path ends
+          # in .json AND matches /egg[._-]/i (see routes/templates.ts).
+          # Every template in this repo must be discoverable by that regex.
+          mapfile -t files < <(find . -name '*.json' -path '*egg*' -not -path './.git/*' | sort)
+          missing=0
+          for f in "${files[@]}"; do
+            if ! echo "$f" | grep -qiE '/egg[._-][^/]*\.json$'; then
+              echo "::error file=$f::Template file does not match the panel importer pattern '/egg[._-]*.json' — rename it or the panel will not discover it"
+              missing=1
+            fi
+          done
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::warning::No egg JSON files found — nothing to validate"
+          fi
+          echo "count=${#files[@]}" >> "$GITHUB_OUTPUT"
+          echo "missing=$missing" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "${files[@]}" > /tmp/egg-files.txt
+
+      - name: Validate JSON structure (PTDL_v2 fields)
+        if: steps.discover.outputs.count != '0'
+        run: |
+          python3 - <<'EOF'
+          import json, sys
+          failures = 0
+          with open('/tmp/egg-files.txt') as fh:
+              files = [l.strip() for l in fh if l.strip()]
+          for path in files:
+              try:
+                  with open(path, encoding='utf-8') as f:
+                      egg = json.load(f)
+              except Exception as e:
+                  print(f"::error file={path}::Invalid JSON: {e}")
+                  failures += 1
+                  continue
+              problems = []
+              if not egg.get('name', '').strip():
+                  problems.append("missing or empty 'name'")
+              if not egg.get('startup', '').strip():
+                  problems.append("missing or empty 'startup'")
+              images = egg.get('docker_images') or {}
+              if not images:
+                  problems.append("missing 'docker_images'")
+              else:
+                  for k, v in images.items():
+                      if not str(v).strip():
+                          problems.append(f"docker_images['{k}'] has empty image ref")
+              stop = egg.get('config', {}).get('stop')
+              if not stop:
+                  problems.append("missing config.stop (command or ^C/^X-style signal)")
+              for problem in problems:
+                  print(f"::error file={path}::{problem}")
+                  failures += 1
+          print(f"Checked {len(files)} file(s), {failures} problem(s)")
+          sys.exit(1 if failures else 0)
+          EOF
+
+      - name: Validate variable references in startup commands
+        if: steps.discover.outputs.count != '0'
+        run: |
+          python3 - <<'EOF'
+          import json, re, sys
+          failures = 0
+          # Vars the panel always provides at runtime
+          builtin = {
+              'SERVER_IP', 'SERVER_PORT', 'SERVER_MEMORY', 'MEMORY', 'PORT',
+              'SERVER_UUID', 'UUID', 'P_SERVER_UUID', 'P_SERVER_LOCATION',
+              'TZ', 'HOME', 'STARTUP', 'SERVER_DIR',
+          }
+          with open('/tmp/egg-files.txt') as fh:
+              files = [l.strip() for l in fh if l.strip()]
+          for path in files:
+              with open(path, encoding='utf-8') as f:
+                  egg = json.load(f)
+              defined = {v.get('env_variable') for v in egg.get('variables', []) if v.get('env_variable')}
+              startup = egg.get('startup', '')
+              refs = set(re.findall(r'\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}', startup))
+              unresolved = sorted(r for r in refs if r not in defined and r not in builtin)
+              if unresolved:
+                  print(f"::error file={path}::startup references undefined variables: {', '.join(unresolved)}")
+                  failures += 1
+          print(f"Startup variable check: {failures} problem(s)")
+          sys.exit(1 if failures else 0)
+          EOF
+
+      - name: Shellcheck install scripts
+        if: steps.discover.outputs.count != '0'
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q shellcheck
+          failures=0
+          while IFS= read -r path; do
+            python3 - "$path" <<'EOF' > /tmp/install-script.sh || continue
+          import json, sys
+          with open(sys.argv[1], encoding='utf-8') as f:
+              egg = json.load(f)
+          script = (egg.get('scripts', {}).get('installation', {}) or {}).get('script') or ''
+          sys.stdout.write(script.replace('\r\n', '\n'))
+          EOF
+            if [ -s /tmp/install-script.sh ]; then
+              if ! shellcheck --severity=error /tmp/install-script.sh; then
+                echo "::error file=$path::install script has shellcheck errors"
+                failures=$((failures+1))
+              fi
+            fi
+          done < /tmp/egg-files.txt
+          echo "Shellcheck: $failures file(s) with errors"
+          exit $((failures > 0))
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### Template validation" >> "$GITHUB_STEP_SUMMARY"
+          echo "Files checked: ${{ steps.discover.outputs.count }}" >> "$GITHUB_STEP_SUMMARY"

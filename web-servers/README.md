@@ -2,6 +2,12 @@
 
 This directory contains templates for web servers and web applications.
 
+## Available Templates
+
+| Template | Directory | Description |
+|----------|-----------|-------------|
+| FastDL (Caddy) — HL1/Source Content Server | [`fastdl/`](fastdl/) | Standalone Fast Download (`sv_downloadurl`) web server for Counter-Strike 1.6, Garry's Mod, CS:S, TF2 and other HL1/Source games. Byte-Range resumption, 304 revalidation, correct MIME types, browsable index; runs a single static Caddy binary on Alpine (~64 MB RAM). |
+
 ## Supported Web Servers
 
 ### Traditional Web Servers

@@ -32,6 +32,12 @@ The `voice-servers/` directory contains templates for voice communication server
 The `web-servers/` directory contains templates for web server applications:
 - Apache, Nginx, Node.js applications, etc.
 
+Available templates:
+
+| Template | Path | Description |
+|----------|------|-------------|
+| FastDL (Caddy) | [`web-servers/fastdl/`](web-servers/fastdl/) | Standalone `sv_downloadurl` content server for HL1/Source games (CS 1.6, GMod, CS:S, TF2, …) |
+
 ### 💾 Storage
 The `storage/` directory contains templates for storage solutions:
 - File servers, FTP servers, MinIO, etc.
