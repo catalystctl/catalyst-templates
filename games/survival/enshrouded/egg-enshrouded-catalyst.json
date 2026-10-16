@@ -1,0 +1,147 @@
+{
+    "_comment": "Catalyst template — Enshrouded dedicated server (Windows-only game, run through GE-Proton). Fixes the 1.0 launch failure where the game exits within a second because the container's bundled Proton is too old for the Steamworks SDK 1.0 requires. Hand-maintained Catalyst egg (PTDL_v2 format, importable by Pterodactyl-style panels).",
+    "meta": {
+        "version": "PTDL_v2",
+        "update_url": null
+    },
+    "exported_at": "2026-10-16T00:00:00+00:00",
+    "name": "Enshrouded (Catalyst)",
+    "author": "catalyst",
+    "description": "Enshrouded dedicated server — a survival, crafting and Action-RPG game set in a sprawling voxel continent.\n\nEnshrouded ships a WINDOWS-ONLY dedicated server (Steam app 2278520, oslist=windows), so this template runs it through GE-Proton. That detail is what makes the stock egg break: ghcr.io/ptero-eggs/steamcmd:proton (built 2026-06-22, Debian 12 / glibc 2.36) ships GE-Proton10-34, whose lsteamclient shim implements SteamUtils008/009/010 but NOT SteamUtils011. Enshrouded 1.0 (2026-10-15) requires SteamUtils011, so the server dies during Steamworks init — before it ever writes enshrouded_server.log. The visible symptom is a bare exit-code-1 crash loop with `tail: cannot open './logs/enshrouded_server.log'`.\n\nThis template pins ghcr.io/ptero-eggs/steamcmd:ubuntu_24.04 (Ubuntu 24.04 / glibc 2.39, ships libvulkan1 and Xvfb) and installs GE-Proton11-9 at install time (its lsteamclient exports SteamUtils011, 258 references). Xvfb is started before Proton because a headless Wine/Proton prefix needs an X display.\n\nGE-Proton11-9 is a glibc-2.38+ build, so it CANNOT run on the bookworm-based steamcmd:proton image — the distro, not just the Proton version, is part of the fix. Verified end-to-end on Catalyst: server reaches `[Session] 'HostOnline' (up)!` and listens on UDP 15637.",
+    "features": [
+        "steam_disk_space"
+    ],
+    "ports": [
+        15637
+    ],
+    "docker_images": {
+        "Ubuntu 24.04 + GE-Proton11-9": "ghcr.io/ptero-eggs/steamcmd:ubuntu_24.04"
+    },
+    "file_denylist": [],
+    "startup": "mkdir -p .steam/sdk64; ln -sf /home/container/steamcmd/linux64/steamclient.so .steam/sdk64/steamclient.so; export STEAM_COMPAT_CLIENT_INSTALL_PATH=/home/container/steamcmd; export STEAM_COMPAT_DATA_PATH=/home/container/proton-prefix; export STEAM_COMPAT_APP_ID=2278520; export PROTON_USE_XALIA=0; export WINEDLLOVERRIDES=\"mscoree,mshtml=;dbghelp=n,b\"; mkdir -p /home/container/proton-prefix; Xvfb :99 -screen 0 1024x768x24 -nolisten tcp >/dev/null 2>&1 & sleep 2; export DISPLAY=:99; rm -f ./logs/enshrouded_server.log; /home/container/proton-ge/proton run ./enshrouded_server.exe & ENS_PID=$! ; sleep 3; tail -c0 -F ./logs/enshrouded_server.log --pid=$ENS_PID",
+    "config": {
+        "files": "{\r\n    \"enshrouded_server.json\": {\r\n        \"parser\": \"json\",\r\n        \"find\": {\r\n            \"name\": \"{{server.build.env.SRV_NAME}}\",\r\n            \"queryPort\": \"{{server.build.default.port}}\",\r\n            \"slotCount\": \"{{server.build.env.MAX_PLAYERS}}\",\r\n            \"userGroups[0].password\": \"{{server.build.env.SRV_PW}}\",\r\n            \"userGroups[1].name\": \"Friend\",\r\n            \"userGroups[1].password\": \"{{server.build.env.SRV_PW2}}\",\r\n            \"userGroups[2].name\": \"Guest\",\r\n            \"userGroups[2].password\": \"{{server.build.env.SRV_PW3}}\",\r\n            \"userGroups[3].name\": \"Visitor\",\r\n            \"userGroups[3].password\": \"{{server.build.env.SRV_PW4}}\"\r\n        }\r\n    }\r\n}",
+        "startup": "{\r\n    \"done\": \"[Session] 'HostOnline' (up)!\"\r\n}",
+        "logs": "{}",
+        "stop": "^C"
+    },
+    "scripts": {
+        "installation": {
+            "script": "#!/bin/bash\n# Enshrouded (Catalyst) install script — Catalyst template\n#\n# Downloads the game (Steam app 2278520, Windows depot) and a GE-Proton build\n# new enough for the Steamworks SDK Enshrouded 1.0 requires.\n#\n# Server files: /mnt/server (Catalyst symlinks /mnt/server -> /data)\n\nset -o pipefail\n\nPROTON_VERSION=\"${ENS_PROTON_VERSION:-GE-Proton11-9}\"\nPROTON_DIR=\"/mnt/server/proton-ge\"\nSTEAMCMD_DIR=\"/mnt/server/steamcmd\"\n\nif [[ \"${STEAM_USER}\" == \"\" ]] || [[ \"${STEAM_PASS}\" == \"\" ]]; then\n    echo \"steam user is not set, using anonymous user.\"\n    STEAM_USER=anonymous\n    STEAM_PASS=\"\"\n    STEAM_AUTH=\"\"\nelse\n    echo \"user set to ${STEAM_USER}\"\nfi\n\n# ── SteamCMD ──────────────────────────────────────────────────────────────\nmkdir -p \"${STEAMCMD_DIR}\" /mnt/server/steamapps\ncd /tmp || exit 1\ncurl -fsSL --retry 3 --retry-delay 2 -o steamcmd_linux.tar.gz \\\n    https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz \\\n    || { echo \"ERROR: failed to download steamcmd\"; exit 1; }\ntar -xzf steamcmd_linux.tar.gz -C \"${STEAMCMD_DIR}\"\ncd \"${STEAMCMD_DIR}\" || exit 1\n\n# SteamCMD refuses to run as root unless the tree is root-owned.\nchown -R root:root /mnt\nexport HOME=/mnt/server\n\n# ── Game files (Windows depot — the dedicated server is Windows-only) ─────\necho \"Installing Enshrouded dedicated server (app ${SRCDS_APPID})...\"\n./steamcmd.sh \\\n    +force_install_dir /mnt/server \\\n    +login \"${STEAM_USER}\" \"${STEAM_PASS}\" \"${STEAM_AUTH}\" \\\n    +@sSteamCmdForcePlatformType windows \\\n    +app_update \"${SRCDS_APPID}\" \\\n    $([[ -z \"${SRCDS_BETAID}\" ]] || printf %s \"-beta ${SRCDS_BETAID}\") \\\n    $([[ -z \"${SRCDS_BETAPASS}\" ]] || printf %s \"-betapassword ${SRCDS_BETAPASS}\") \\\n    ${INSTALL_FLAGS} \\\n    $([[ \"${VALIDATE}\" == \"1\" ]] && printf %s 'validate') \\\n    +quit\n\nif [ ! -f /mnt/server/enshrouded_server.exe ]; then\n    echo \"ERROR: enshrouded_server.exe was not installed — the server cannot start.\"\n    echo \"Check the Steam credentials and reinstall.\"\n    exit 1\nfi\n\n# ── Steam client libraries (Steamworks init needs these) ─────────────────\nmkdir -p /mnt/server/.steam/sdk32 /mnt/server/.steam/sdk64\ncp -v \"${STEAMCMD_DIR}/linux32/steamclient.so\" /mnt/server/.steam/sdk32/steamclient.so\ncp -v \"${STEAMCMD_DIR}/linux64/steamclient.so\" /mnt/server/.steam/sdk64/steamclient.so\n\n# ── GE-Proton ────────────────────────────────────────────────────────────\n# Enshrouded 1.0 needs SteamUtils011 from lsteamclient, which GE-Proton only\n# gained in the 11.x series. Anything older dies in Steamworks init.\n# The version file reads \"<buildid> GE-Proton11-9\".\nif [ -x \"${PROTON_DIR}/proton\" ] && grep -q \"${PROTON_VERSION}$\" \"${PROTON_DIR}/version\" 2>/dev/null; then\n    echo \"${PROTON_VERSION} already installed, skipping download.\"\nelse\n    rm -rf \"${PROTON_DIR}\"\n    mkdir -p \"${PROTON_DIR}\"\n    echo \"Downloading ${PROTON_VERSION} (this is a ~560 MB tarball)...\"\n    curl -fSL --retry 3 --retry-delay 2 -o /tmp/proton.tar.gz \\\n        \"https://github.com/GloriousEggroll/proton-ge-custom/releases/download/${PROTON_VERSION}/${PROTON_VERSION}-x86_64.tar.gz\" \\\n        || { echo \"ERROR: failed to download ${PROTON_VERSION}\"; exit 1; }\n    tar -xzf /tmp/proton.tar.gz -C \"${PROTON_DIR}\" --strip-components=1\n    rm -f /tmp/proton.tar.gz\nfi\n\nif [ ! -x \"${PROTON_DIR}/proton\" ]; then\n    echo \"ERROR: ${PROTON_DIR}/proton is missing after extraction.\"\n    exit 1\nfi\n\n# Fail loudly at install time rather than with an unexplained crash loop on\n# the first start: GE-Proton 11 needs libvulkan.so.1 and glibc >= 2.38.\nif ! ldconfig -p 2>/dev/null | grep -q 'libvulkan\\.so\\.1'; then\n    echo \"ERROR: libvulkan.so.1 is missing from this image.\"\n    echo \"${PROTON_VERSION} cannot start without it. Use the template's\"\n    echo \"default image (ghcr.io/ptero-eggs/steamcmd:ubuntu_24.04).\"\n    exit 1\nfi\nGLIBC_MINOR=\"$(ldd --version 2>/dev/null | head -1 | grep -oE '[0-9]+\\.[0-9]+$' | cut -d. -f2)\"\nif [ -z \"${GLIBC_MINOR}\" ] || [ \"${GLIBC_MINOR}\" -lt 38 ]; then\n    echo \"ERROR: ${PROTON_VERSION} needs glibc 2.38 or newer; this image has $(ldd --version 2>/dev/null | head -1).\"\n    echo \"Use the template's default image (ghcr.io/ptero-eggs/steamcmd:ubuntu_24.04).\"\n    exit 1\nfi\n\n# ── Default configuration ────────────────────────────────────────────────\nif [ ! -f /mnt/server/enshrouded_server.json ]; then\n    echo \"Writing a default enshrouded_server.json...\"\n    cat > /mnt/server/enshrouded_server.json <<'JSON'\n{\n    \"enableTextChat\": false,\n    \"enableVoiceChat\": false,\n    \"gameSettingsPreset\": \"Default\",\n    \"ip\": \"0.0.0.0\",\n    \"logDirectory\": \"./logs\",\n    \"name\": \"My Enshrouded Server\",\n    \"queryPort\": 15637,\n    \"saveDirectory\": \"./savegame\",\n    \"slotCount\": 16,\n    \"tags\": [],\n    \"userGroups\": [\n        { \"name\": \"Admin\",   \"password\": \"ChangeMe1\", \"canKickBan\": true,  \"canAccessInventories\": true, \"canEditWorld\": true, \"canEditBase\": true, \"canExtendBase\": true, \"reservedSlots\": 0 },\n        { \"name\": \"Friend\",  \"password\": \"ChangeMe2\", \"canKickBan\": false, \"canAccessInventories\": true, \"canEditWorld\": true, \"canEditBase\": true, \"canExtendBase\": true, \"reservedSlots\": 0 },\n        { \"name\": \"Guest\",   \"password\": \"ChangeMe3\", \"canKickBan\": false, \"canAccessInventories\": false, \"canEditWorld\": false, \"canEditBase\": false, \"canExtendBase\": false, \"reservedSlots\": 3 },\n        { \"name\": \"Visitor\", \"password\": \"ChangeMe4\", \"canKickBan\": false, \"canAccessInventories\": false, \"canEditWorld\": false, \"canEditBase\": false, \"canExtendBase\": false, \"reservedSlots\": 0 }\n    ],\n    \"bannedAccounts\": [],\n    \"voiceChatMode\": \"Proximity\"\n}\nJSON\nelse\n    echo \"enshrouded_server.json already exists, keeping it.\"\nfi\n\nmkdir -p /mnt/server/savegame /mnt/server/logs\nchown -R 1000:1000 /mnt/server 2>/dev/null || true\n\necho \"Enshrouded install complete.\"\n",
+            "container": "ghcr.io/ptero-eggs/installers:debian",
+            "entrypoint": "bash"
+        }
+    },
+    "variables": [
+        {
+            "name": "GE-Proton Version",
+            "description": "GE-Proton release used to run the Windows dedicated server. Must be 11-x or newer: Enshrouded 1.0 needs SteamUtils011, which the lsteamclient shim only gained in the 11.x series. Change the value and reinstall the server to upgrade.",
+            "env_variable": "ENS_PROTON_VERSION",
+            "default_value": "GE-Proton11-9",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:32",
+            "field_type": "text"
+        },
+        {
+            "name": "[SERVER] Server Name",
+            "description": "Name shown in the server list and on the Steam server browser.",
+            "env_variable": "SRV_NAME",
+            "default_value": "My Enshrouded Server",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:60",
+            "field_type": "text"
+        },
+        {
+            "name": "[SERVER] Max Players",
+            "description": "Number of player slots. The server accepts up to 16.",
+            "env_variable": "MAX_PLAYERS",
+            "default_value": "16",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|numeric|min:1|max:16",
+            "field_type": "number"
+        },
+        {
+            "name": "[USER GROUP] 'Admin' Group Password",
+            "description": "Password for the Admin user group (full base and world edit rights). Use 8+ characters; Enshrouded rejects purely numeric passwords.",
+            "env_variable": "SRV_PW",
+            "default_value": "ChangeMe1",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|min:8|not_regex:/^\\d+$/",
+            "field_type": "text"
+        },
+        {
+            "name": "[USER GROUP] 'Friend' Group Password",
+            "description": "Password for the Friend user group (build and edit rights, cannot kick or ban). Use 8+ characters; Enshrouded rejects purely numeric passwords.",
+            "env_variable": "SRV_PW2",
+            "default_value": "ChangeMe2",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|min:8|not_regex:/^\\d+$/",
+            "field_type": "text"
+        },
+        {
+            "name": "[USER GROUP] 'Guest' Group Password",
+            "description": "Password for the Guest user group (join and play, no edit rights). Use 8+ characters; Enshrouded rejects purely numeric passwords.",
+            "env_variable": "SRV_PW3",
+            "default_value": "ChangeMe3",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|min:8|not_regex:/^\\d+$/",
+            "field_type": "text"
+        },
+        {
+            "name": "[USER GROUP] 'Visitor' Group Password",
+            "description": "Password for the Visitor user group (read-only access). Use 8+ characters; Enshrouded rejects purely numeric passwords.",
+            "env_variable": "SRV_PW4",
+            "default_value": "ChangeMe4",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|min:8|not_regex:/^\\d+$/",
+            "field_type": "text"
+        },
+        {
+            "name": "[STEAM] Steam App ID",
+            "description": "Enshrouded dedicated server app id. Do not change.",
+            "env_variable": "SRCDS_APPID",
+            "default_value": "2278520",
+            "user_viewable": false,
+            "user_editable": false,
+            "rules": "required|string|in:2278520",
+            "field_type": "text"
+        },
+        {
+            "name": "[SYSTEM] Windows Install",
+            "description": "Enshrouded's dedicated server only ships Windows depots, so this must stay enabled. Do not change.",
+            "env_variable": "WINDOWS_INSTALL",
+            "default_value": "1",
+            "user_viewable": false,
+            "user_editable": false,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "[SYSTEM] Auto Update",
+            "description": "Update the server files from Steam before each start. Leave enabled so 1.0 hotfixes are picked up automatically.",
+            "env_variable": "AUTO_UPDATE",
+            "default_value": "1",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "[SYSTEM] Validate",
+            "description": "Run a full Steam file validation on the next start. Slow (re-verifies ~8 GB) but repairs a corrupted install.",
+            "env_variable": "VALIDATE",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        }
+    ]
+}

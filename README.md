@@ -2,6 +2,8 @@
 
 Welcome to the Catalyst Game Panel template repository! This repository contains organized templates for game servers, databases, and various applications that can be deployed through the Catalyst control panel.
 
+> **Note:** the `games/` genre directories are mostly stubs (each holds a `README.md` with curation guidelines). Populated server templates: Enshrouded under `games/survival/enshrouded/` and FastDL under `web-servers/fastdl/`.
+
 ## 📁 Repository Structure
 
 ### 🎮 Games
@@ -36,6 +38,7 @@ Available templates:
 
 | Template | Path | Description |
 |----------|------|-------------|
+| Enshrouded (Catalyst) | [`games/survival/enshrouded/`](games/survival/enshrouded/) | Enshrouded dedicated server with the 1.0 launch fixed (GE-Proton 11-9 on Ubuntu 24.04) |
 | FastDL (Caddy) | [`web-servers/fastdl/`](web-servers/fastdl/) | Standalone `sv_downloadurl` content server for HL1/Source games (CS 1.6, GMod, CS:S, TF2, …) |
 
 ### 💾 Storage

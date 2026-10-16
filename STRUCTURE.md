@@ -25,6 +25,9 @@ catalyst-templates/
 │   ├── sports/                        # Sports games (Rocket League, etc.)
 │   ├── strategy/                      # Strategy games (Factorio, etc.)
 │   └── survival/                      # Survival games (Rust, ARK, etc.)
+│       └── enshrouded/                # Enshrouded (Catalyst) — GE-Proton 11-9
+│           ├── egg-enshrouded-catalyst.json
+│           └── README.md
 │
 ├── databases/                         # Database server templates
 │   └── README.md                      # MySQL, PostgreSQL, MongoDB, Redis, etc.
@@ -33,7 +36,10 @@ catalyst-templates/
 │   └── README.md                      # TeamSpeak, Mumble, etc.
 │
 ├── web-servers/                       # Web server templates
-│   └── README.md                      # Apache, Nginx, Node.js, etc.
+│   ├── README.md                      # Apache, Nginx, Node.js, etc.
+│   └── fastdl/                        # FastDL (Caddy) — sv_downloadurl content server
+│       ├── egg-fastdl-caddy.json
+│       └── README.md
 │
 ├── storage/                           # Storage and file transfer templates
 │   └── README.md                      # FTP, MinIO, Nextcloud, etc.
@@ -66,9 +72,12 @@ When adding a new template:
 
 1. **Identify the category** - Choose the most appropriate directory
 2. **Create a subdirectory** - Name it after the game/application
-3. **Add documentation** - Include a README.md with setup instructions
-4. **Include configurations** - Add all necessary config files
-5. **Test thoroughly** - Ensure the template works as expected
+3. **Name the egg file so the panel finds it** - the Catalyst batch importer only
+   discovers paths matching `/egg[._-][^/]*\.json$/i`, so `egg-<slug>.json` is the
+   safe convention (CI fails otherwise)
+4. **Add documentation** - Include a README.md with setup instructions
+5. **Include configurations** - Add all necessary config files
+6. **Test thoroughly** - Ensure the template works as expected
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 

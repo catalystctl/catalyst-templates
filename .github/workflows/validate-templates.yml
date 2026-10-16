@@ -30,6 +30,10 @@ jobs:
           if [ "${#files[@]}" -eq 0 ]; then
             echo "::warning::No egg JSON files found — nothing to validate"
           fi
+          if [ "${missing}" -ne 0 ]; then
+            echo "::error::One or more template files are not discoverable by the panel importer"
+            exit 1
+          fi
           echo "count=${#files[@]}" >> "$GITHUB_OUTPUT"
           echo "missing=$missing" >> "$GITHUB_OUTPUT"
           printf '%s\n' "${files[@]}" > /tmp/egg-files.txt
@@ -97,6 +101,65 @@ jobs:
                   print(f"::error file={path}::startup references undefined variables: {', '.join(unresolved)}")
                   failures += 1
           print(f"Startup variable check: {failures} problem(s)")
+          sys.exit(1 if failures else 0)
+          EOF
+
+      - name: Validate config.files placeholders
+        if: steps.discover.outputs.count != '0'
+        run: |
+          python3 - <<'EOF'
+          import json, re, sys
+          failures = 0
+          # Placeholders the agent resolves itself (see agent config_parser.rs).
+          builtin_prefixes = (
+              'server.build.env.', 'server.build.default.', 'server.build.',
+              'server.memory', 'server.disk', 'config.docker.interface',
+          )
+          with open('/tmp/egg-files.txt') as fh:
+              files = [l.strip() for l in fh if l.strip()]
+          for path in files:
+              with open(path, encoding='utf-8') as f:
+                  egg = json.load(f)
+              defined = {v.get('env_variable') for v in egg.get('variables', []) if v.get('env_variable')}
+              raw = egg.get('config', {}).get('files')
+              if not raw:
+                  continue
+              # config.files is a JSON string in egg exports, an object in Pelican exports.
+              if isinstance(raw, str):
+                  try:
+                      raw = json.loads(raw)
+                  except Exception as e:
+                      print(f"::error file={path}::config.files is not valid JSON: {e}")
+                      failures += 1
+                      continue
+              if not isinstance(raw, dict):
+                  continue
+              for fname, meta in raw.items():
+                  if not isinstance(meta, dict):
+                      continue
+                  parser = str(meta.get('parser', 'file')).lower()
+                  if parser not in ('json', 'yaml', 'yml', 'ini', 'xml', 'properties', 'file'):
+                      print(f"::error file={path}::config.files['{fname}'] uses unsupported parser '{parser}'")
+                      failures += 1
+                  # Both the Wings (replace[]) and egg-export (find{}) shapes.
+                  values = []
+                  if isinstance(meta.get('find'), dict):
+                      values += [v for v in meta['find'].values() if isinstance(v, str)]
+                  if isinstance(meta.get('replace'), list):
+                      for item in meta['replace']:
+                          if isinstance(item, dict):
+                              for k in ('replace_with', 'value'):
+                                  if isinstance(item.get(k), str):
+                                      values.append(item[k])
+                  for val in values:
+                      for ref in re.findall(r'\{\{\s*([^}]+?)\s*\}\}', val):
+                          if ref.startswith(builtin_prefixes):
+                              continue
+                          if ref in defined or ref.upper() in defined:
+                              continue
+                          print(f"::error file={path}::config.files['{fname}'] references undefined variable '{{{{{ref}}}}}'")
+                          failures += 1
+          print(f"config.files check: {failures} problem(s)")
           sys.exit(1 if failures else 0)
           EOF
 

@@ -23,18 +23,22 @@ Place your template in the appropriate directory:
 
 ### 2. Template Structure
 
-Each template should be in its own directory and include:
+A Catalyst template is a **single Pterodactyl-format egg JSON file** (`PTDL_v2`)
+plus a `README.md`. There is no `config.json` or `scripts/` directory — the
+install script is embedded in the egg as `scripts.installation.script`.
 
 ```
-game-or-app-name/
-├── README.md                 # Documentation
-├── config.json or .yml       # Catalyst configuration
-├── server.properties         # Game/app configuration (if applicable)
-└── scripts/                  # Any startup or management scripts
-    ├── install.sh
-    ├── start.sh
-    └── update.sh
+<category>/<game-or-app-name>/
+├── egg-<slug>.json           # The template (PTDL_v2 egg)
+└── README.md                 # Documentation
 ```
+
+**The file name matters.** The panel's batch importer only discovers files whose
+path matches `/egg[._-][^/]*\.json$/i`, so `egg-<slug>.json` is the safe
+convention. CI rejects anything else with a hard error.
+
+See `games/survival/enshrouded/` and `web-servers/fastdl/` for complete,
+working examples.
 
 ### 3. Required Files
 
@@ -47,14 +51,23 @@ Every template must include a README.md with:
 - Configuration guide
 - Common issues and troubleshooting
 
-#### Configuration File
-Include a Catalyst panel configuration file (JSON or YAML) with:
-- Server name and description
-- Startup command
-- Port mappings
-- Environment variables
-- Resource limits
-- File mounts
+#### The egg JSON
+Required top-level keys (CI validates all of these):
+
+| Key | Notes |
+|---|---|
+| `name` | Non-empty, unique in the panel |
+| `startup` | The run command. May reference `{{SERVER_PORT}}` and any `variables[].env_variable` — CI fails on a `{{…}}` that is neither |
+| `docker_images` | At least one non-empty `{label: image}` entry. The **first** entry becomes the default image |
+| `config.stop` | A stop command or `^C` / `^X`-style signal. Use `^C` (→ `SIGINT`) for Wine/Proton servers so the game can save |
+| `scripts.installation.script` | The install script. Must pass `shellcheck --severity=error` |
+| `variables` | Array of panel variables (may be empty) |
+
+Optional but useful:
+- `config.startup.done` — console line that marks the server as started
+- `config.files` — JSON-string mapping of config files to patch, using `find: {"key": "{{server.build.env.VAR}}"}`. Catalyst's agent applies these (`parser`: `json`, `yaml`, `ini`, `xml`, `properties`, `file`)
+- `features` — e.g. `steam_disk_space`
+- `file_denylist` — paths users may not edit
 
 ### 4. Documentation Standards
 
@@ -70,9 +83,11 @@ Include a Catalyst panel configuration file (JSON or YAML) with:
 Before submitting your template, ensure:
 
 - [ ] Template is placed in the correct category
+- [ ] Egg file is named `egg-<slug>.json` (the panel importer pattern)
 - [ ] README.md is complete and accurate
-- [ ] Configuration file is properly formatted
-- [ ] All file paths are relative to the template directory
+- [ ] Egg JSON is valid and has `name`, `startup`, `docker_images`, `config.stop`
+- [ ] Every `{{VAR}}` in `startup` is either a panel builtin (`SERVER_PORT`, …) or declared in `variables`
+- [ ] Install script passes `shellcheck --severity=error`
 - [ ] Port numbers don't conflict with common services
 - [ ] Resource requirements are specified
 - [ ] Startup command has been tested
