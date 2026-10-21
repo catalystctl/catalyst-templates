@@ -1,5 +1,5 @@
 {
-    "_comment": "Catalyst template — Enshrouded dedicated server (Windows-only game, run through GE-Proton). Fixes the 1.0 launch failure where the game exits within a second because the container's bundled Proton is too old for the Steamworks SDK 1.0 requires. Hand-maintained Catalyst egg (PTDL_v2 format, importable by Pterodactyl-style panels).",
+    "_comment": "Catalyst template — Enshrouded dedicated server (Windows-only game, run through GE-Proton). Fixes the 1.0 launch failure where the game exits within a second because the container's bundled Proton is too old for the Steamworks SDK 1.0 requires. Hand-maintained Catalyst egg (PTDL_v2 format, importable by Pterodactyl-style panels). The startup waits up to 300s for the first log line (fresh Proton prefixes take 1-2 minutes to build) instead of a fixed 3s sleep, and uses only lower-case shell variables so the panel importer leaves them literal.",
     "meta": {
         "version": "PTDL_v2",
         "update_url": null
@@ -7,7 +7,7 @@
     "exported_at": "2026-10-16T00:00:00+00:00",
     "name": "Enshrouded (Catalyst)",
     "author": "catalyst",
-    "description": "Enshrouded dedicated server — a survival, crafting and Action-RPG game set in a sprawling voxel continent.\n\nEnshrouded ships a WINDOWS-ONLY dedicated server (Steam app 2278520, oslist=windows), so this template runs it through GE-Proton. That detail is what makes the stock egg break: ghcr.io/ptero-eggs/steamcmd:proton (built 2026-06-22, Debian 12 / glibc 2.36) ships GE-Proton10-34, whose lsteamclient shim implements SteamUtils008/009/010 but NOT SteamUtils011. Enshrouded 1.0 (2026-10-15) requires SteamUtils011, so the server dies during Steamworks init — before it ever writes enshrouded_server.log. The visible symptom is a bare exit-code-1 crash loop with `tail: cannot open './logs/enshrouded_server.log'`.\n\nThis template pins ghcr.io/ptero-eggs/steamcmd:ubuntu_24.04 (Ubuntu 24.04 / glibc 2.39, ships libvulkan1 and Xvfb) and installs GE-Proton11-9 at install time (its lsteamclient exports SteamUtils011, 258 references). Xvfb is started before Proton because a headless Wine/Proton prefix needs an X display.\n\nGE-Proton11-9 is a glibc-2.38+ build, so it CANNOT run on the bookworm-based steamcmd:proton image — the distro, not just the Proton version, is part of the fix. Verified end-to-end on Catalyst: server reaches `[Session] 'HostOnline' (up)!` and listens on UDP 15637.",
+    "description": "Enshrouded dedicated server — a survival, crafting and Action-RPG game set in a sprawling voxel continent.\n\nEnshrouded ships a WINDOWS-ONLY dedicated server (Steam app 2278520, oslist=windows), so this template runs it through GE-Proton. That detail is what makes the stock egg break: ghcr.io/ptero-eggs/steamcmd:proton (built 2026-06-22, Debian 12 / glibc 2.36) ships GE-Proton10-34, whose lsteamclient shim implements SteamUtils008/009/010 but NOT SteamUtils011. Enshrouded 1.0 (2026-10-15) requires SteamUtils011, so the server dies during Steamworks init — before it ever writes enshrouded_server.log. The visible symptom is a bare exit-code-1 crash loop with `tail: cannot open './logs/enshrouded_server.log'`.\n\nThis template pins ghcr.io/ptero-eggs/steamcmd:ubuntu_24.04 (Ubuntu 24.04 / glibc 2.39, ships libvulkan1 and Xvfb) and installs GE-Proton11-9 at install time (its lsteamclient exports SteamUtils011, 258 references). Xvfb is started before Proton because a headless Wine/Proton prefix needs an X display.\n\nGE-Proton11-9 is a glibc-2.38+ build, so it CANNOT run on the bookworm-based steamcmd:proton image — the distro, not just the Proton version, is part of the fix. Verified end-to-end on Catalyst: server reaches `[Session] 'HostOnline' (up)!` and listens on UDP 15637.\n\nA fresh install also needs two things this egg encodes: the container must be given enough memory (Enshrouded 1.0 OOM-dies silently within seconds on a 1 GB cgroup — before writing any log — which looks exactly like a Steamworks crash), and the startup must tolerate the 1-2 minutes Proton needs to build a fresh prefix instead of giving up after 3 seconds. The hidden SERVER_MEMORY variable makes the panel pre-fill an 8 GB allocation when a server is created from this template.",
     "features": [
         "steam_disk_space"
     ],
@@ -18,7 +18,7 @@
         "Ubuntu 24.04 + GE-Proton11-9": "ghcr.io/ptero-eggs/steamcmd:ubuntu_24.04"
     },
     "file_denylist": [],
-    "startup": "mkdir -p .steam/sdk64; ln -sf /home/container/steamcmd/linux64/steamclient.so .steam/sdk64/steamclient.so; export STEAM_COMPAT_CLIENT_INSTALL_PATH=/home/container/steamcmd; export STEAM_COMPAT_DATA_PATH=/home/container/proton-prefix; export STEAM_COMPAT_APP_ID=2278520; export PROTON_USE_XALIA=0; export WINEDLLOVERRIDES=\"mscoree,mshtml=;dbghelp=n,b\"; mkdir -p /home/container/proton-prefix; Xvfb :99 -screen 0 1024x768x24 -nolisten tcp >/dev/null 2>&1 & sleep 2; export DISPLAY=:99; rm -f ./logs/enshrouded_server.log; /home/container/proton-ge/proton run ./enshrouded_server.exe & ENS_PID=$! ; sleep 3; tail -c0 -F ./logs/enshrouded_server.log --pid=$ENS_PID",
+    "startup": "mkdir -p .steam/sdk64; ln -sf /home/container/steamcmd/linux64/steamclient.so .steam/sdk64/steamclient.so; export STEAM_COMPAT_CLIENT_INSTALL_PATH=/home/container/steamcmd; export STEAM_COMPAT_DATA_PATH=/home/container/proton-prefix; export STEAM_COMPAT_APP_ID=2278520; export PROTON_USE_XALIA=0; export WINEDLLOVERRIDES=\"mscoree,mshtml=;dbghelp=n,b\"; mkdir -p /home/container/proton-prefix; Xvfb :99 -screen 0 1024x768x24 -nolisten tcp >/dev/null 2>&1 & sleep 2; export DISPLAY=:99; rm -f ./logs/enshrouded_server.log; mkdir -p ./logs; /home/container/proton-ge/proton run ./enshrouded_server.exe & ens_pid=$!; wait_n=0; until [ -f ./logs/enshrouded_server.log ] || ! kill -0 $ens_pid 2>/dev/null || [ $wait_n -ge 300 ]; do sleep 1; wait_n=$((wait_n+1)); done; tail -c0 -F ./logs/enshrouded_server.log --pid=$ens_pid",
     "config": {
         "files": "{\r\n    \"enshrouded_server.json\": {\r\n        \"parser\": \"json\",\r\n        \"find\": {\r\n            \"name\": \"{{server.build.env.SRV_NAME}}\",\r\n            \"queryPort\": \"{{server.build.default.port}}\",\r\n            \"slotCount\": \"{{server.build.env.MAX_PLAYERS}}\",\r\n            \"userGroups[0].password\": \"{{server.build.env.SRV_PW}}\",\r\n            \"userGroups[1].name\": \"Friend\",\r\n            \"userGroups[1].password\": \"{{server.build.env.SRV_PW2}}\",\r\n            \"userGroups[2].name\": \"Guest\",\r\n            \"userGroups[2].password\": \"{{server.build.env.SRV_PW3}}\",\r\n            \"userGroups[3].name\": \"Visitor\",\r\n            \"userGroups[3].password\": \"{{server.build.env.SRV_PW4}}\"\r\n        }\r\n    }\r\n}",
         "startup": "{\r\n    \"done\": \"[Session] 'HostOnline' (up)!\"\r\n}",
@@ -33,6 +33,16 @@
         }
     },
     "variables": [
+        {
+            "name": "[SYSTEM] Memory Default",
+            "description": "Pre-fills the server's memory allocation. Enshrouded 1.0 needs at least 8 GB; a 1 GB (generic import default) cgroup OOM-kills the server within seconds, before it writes any log. The runtime value is always overwritten with the actual allocation, so this only seeds the create-server form. 16 GB recommended for large worlds.",
+            "env_variable": "SERVER_MEMORY",
+            "default_value": "8192",
+            "user_viewable": false,
+            "user_editable": false,
+            "rules": "required|numeric",
+            "field_type": "text"
+        },
         {
             "name": "GE-Proton Version",
             "description": "GE-Proton release used to run the Windows dedicated server. Must be 11-x or newer: Enshrouded 1.0 needs SteamUtils011, which the lsteamclient shim only gained in the 11.x series. Change the value and reinstall the server to upgrade.",

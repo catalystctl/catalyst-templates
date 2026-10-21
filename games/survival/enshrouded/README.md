@@ -28,10 +28,18 @@ tail: cannot open './logs/enshrouded_server.log' for reading: No such file or di
 ```
 
 Those two lines appear on a **healthy first boot too** (`rm` has nothing to
-delete yet). The real signal is that `tail … --pid=$ENS_PID` exits 1
+delete yet). The real signal is that `tail … --pid=$ens_pid` exits 1
 immediately: with a live pid it retries forever, with a dead pid it returns at
-once. A dead `ENS_PID` plus no log file is the Steamworks-init failure
-signature.
+once. A dead `ens_pid` plus no log file means the server process itself died
+before logging — see *Troubleshooting* below for the two causes (memory and
+Proton version).
+
+The startup does **not** give up after a fixed delay: it polls for the log
+file for up to **300 seconds** (a fresh Proton prefix takes 1–2 minutes to
+build on first boot) while checking that the server process is still alive,
+and only then starts `tail`. It uses only lower-case shell variables
+(`ens_pid`, `wait_n`) so the Catalyst importer leaves them literal —
+upper-case `$VAR` names get rewritten into `{{VAR}}` placeholders at import.
 
 Verify the missing export yourself:
 
@@ -56,7 +64,7 @@ causes and will not help a 1.0 launch failure.
 | | Recommended | Notes |
 |---|---|---|
 | CPU | 4 cores | 2 cores works, but world generation is slow |
-| RAM | 4–6 GB | The 1.0 server is heavier than the 0.x betas |
+| RAM | 16 GB (8 GB minimum) | The template pre-fills an **8 GB** allocation via a hidden `SERVER_MEMORY` variable; a 1 GB cgroup OOM-kills the server within seconds, before any log is written |
 | Disk | 30 GB | ~9 GB installed, plus savegames and the Proton prefix |
 | Architecture | `x86_64` | GE-Proton 11-9 has no usable `aarch64` Wine build here |
 
@@ -78,8 +86,7 @@ panel from these variables:
 | Variable | Default | Purpose |
 |---|---|---|
 | `ENS_PROTON_VERSION` | `GE-Proton11-9` | Proton release. **Must stay 11-x or newer.** Reinstall to change. |
-| `SRV_NAME` | `My Enshrouded Server` | Name shown in the server list |
-| `MAX_PLAYERS` | `16` | Player slots (1–16) |
+| `SRV_NAME` | `My Enshrouded Server` | Name shown in the server list || `MAX_PLAYERS` | `16` | Player slots (1–16) |
 | `SRV_PW` | `ChangeMe1` | Admin group password |
 | `SRV_PW2` | `ChangeMe2` | Friend group password |
 | `SRV_PW3` | `ChangeMe3` | Guest group password |
@@ -106,9 +113,22 @@ a wipe — Enshrouded has no server-side rollback.
 
 ## Troubleshooting
 
-**Crash loop with no log file at all.** Check the Proton version: it must be
-`GE-Proton11-x` or newer. Reinstall the server after changing
-`ENS_PROTON_VERSION`.
+**Crash loop, exit code 1, no log file at all.** The server process died
+within seconds of launch. Check these in order:
+
+1. **Memory allocation.** Enshrouded 1.0 needs at least 8 GB. A server created
+   from a generic import (which defaults to 1 GB) OOM-kills the game silently
+   — no console output, no log file — which looks exactly like a Steamworks
+   crash. Raise the server's Memory allocation and restart. (Panels built from
+   Catalyst before the console-fidelity fix also strip `<` and `>` from the
+   displayed console, so `2>&1` shows as `2&1`; the command that actually runs
+   is fine.)
+2. **Proton version.** It must be `GE-Proton11-x` or newer; reinstall the
+   server after changing `ENS_PROTON_VERSION`.
+
+**First boot takes minutes.** A fresh Proton prefix takes 1–2 minutes to
+build before the game even starts; the startup waits up to 5 minutes for the
+first log line, so this is normal. Watch for `[Session] 'HostOnline' (up)!`.
 
 **`libvulkan.so.1: cannot open shared object file`.** The server is running on
 an image without Vulkan. Set the container image back to
@@ -119,7 +139,7 @@ an image without Vulkan. Set the container image back to
 to proceed on such an image — switch to the template's default image.
 
 **Server starts, then exits after a few seconds.** Read
-`./logs/enshrouded_server.log`; unlike the Steamworks failure above, this one
+`./logs/enshrouded_server.log`; unlike the failures above, this one
 does write a log. Usually a bad password or an invalid `gameSettings` value in
 `enshrouded_server.json`.
 
