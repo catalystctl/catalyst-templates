@@ -1,0 +1,65 @@
+{
+    "_comment": "DO NOT EDIT: FILE GENERATED AUTOMATICALLY BY PTERODACTYL PANEL - PTERODACTYL.IO",
+    "meta": {
+        "version": "PTDL_v2",
+        "update_url": null
+    },
+    "exported_at": "2026-04-26T20:16:38+02:00",
+    "name": "VanillaCord",
+    "author": "support@pterodactyl.io",
+    "description": "Minecraft is a game about placing blocks and going on adventures. Explore randomly generated worlds and build amazing things from the simplest of homes to the grandest of castles. Play in Creative Mode with unlimited resources or mine deep in Survival Mode, crafting weapons and armor to fend off dangerous mobs. Do all this alone or with friends.\r\n\r\nVanillaCord adds support for BungeeCord's ip_forward setting.",
+    "features": [
+        "eula",
+        "java_version",
+        "pid_limit"
+    ],
+    "ports": [
+        25565
+    ],
+    "docker_images": {
+        "Java 25": "ghcr.io/ptero-eggs/yolks:java_25",
+        "Java 22": "ghcr.io/ptero-eggs/yolks:java_22",
+        "Java 21": "ghcr.io/ptero-eggs/yolks:java_21",
+        "Java 17": "ghcr.io/ptero-eggs/yolks:java_17",
+        "Java 16": "ghcr.io/ptero-eggs/yolks:java_16",
+        "Java 11": "ghcr.io/ptero-eggs/yolks:java_11",
+        "Java 8": "ghcr.io/ptero-eggs/yolks:java_8"
+    },
+    "file_denylist": [],
+    "startup": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}}",
+    "config": {
+        "files": "{\r\n    \"server.properties\": {\r\n        \"parser\": \"properties\",\r\n        \"find\": {\r\n            \"server-ip\": \"0.0.0.0\",\r\n            \"server-port\": \"{{server.build.default.port}}\",\r\n            \"query.port\": \"{{server.build.default.port}}\"\r\n        }\r\n    }\r\n}",
+        "startup": "{\r\n    \"done\": \")! For help, type \",\r\n    \"userInteraction\": [\r\n        \"Go to eula.txt for more info.\"\r\n    ]\r\n}",
+        "logs": "{}",
+        "stop": "stop"
+    },
+    "scripts": {
+        "installation": {
+            "script": "#!/bin/bash\n\n# The selected installer is Ubuntu Jammy; use bash and apt-get, not Alpine's\n# ash/apk. Keep normal shell semantics (no blanket set -e).\nset -o pipefail\napt-get update || exit \"$?\"\napt-get install -y --no-install-recommends ca-certificates curl jq || exit \"$?\"\n\nmkdir -p /mnt/server || exit \"$?\"\ncd /mnt/server || exit \"$?\"\n\nREQUESTED_VERSION=${VANILLA_VERSION:-latest}\necho \"$REQUESTED_VERSION\"\n\n# Resolve both latest and explicit requests to an official release. Keep the\n# official ID unchanged: VanillaCord and Mojang artifact lookups require 26.3,\n# not a synthesized 26.3.0. pipefail propagates either side's failure.\nINSTALLING_VERSION=$(\n  curl -fsSL https://launchermeta.mojang.com/mc/game/version_manifest_v2.json |\n    jq -er --arg requested \"$REQUESTED_VERSION\" '\n      if (.latest | type) != \"object\"\n          or (.latest.release | type) != \"string\"\n          or (.versions | type) != \"array\"\n      then\n        error(\"Invalid Mojang version manifest\")\n      else\n        (if $requested == \"\" or $requested == \"latest\"\n         then .latest.release\n         else $requested\n         end) as $wanted\n        | first(.versions[]\n            | select(.type == \"release\" and .id == $wanted)\n            | .id\n            | select(type == \"string\"))\n      end\n    '\n) || exit \"$?\"\n\nif [[ ! \"$INSTALLING_VERSION\" =~ ^[0-9]+\\.[0-9]+(\\.[0-9]+)?$ ]]; then\n  echo \"VanillaCord requires an official numeric two- or three-component Minecraft release ID (for example 26.3 or 1.21.4), got '$INSTALLING_VERSION'.\"\n  exit 1\nfi\n\n# Version comparison alone uses a three-component copy. Never pass this\n# normalized value to VanillaCord in place of the official ID above.\nCOMPARISON_VERSION=$INSTALLING_VERSION\nif [[ \"$COMPARISON_VERSION\" =~ ^[0-9]+\\.[0-9]+$ ]]; then\n  COMPARISON_VERSION=\"${COMPARISON_VERSION}.0\"\nfi\nIFS='.' read -r MAJOR_VERSION MINOR_VERSION PATCH_VERSION <<< \"$COMPARISON_VERSION\"\n\nVANILLACORD_URL=https://src.me1312.net/jenkins/job/VanillaCord/job/1.12/lastSuccessfulBuild/artifact/artifacts/VanillaCord.jar\nif [ \"$MAJOR_VERSION\" -eq 1 ] && [ \"$MINOR_VERSION\" -lt 12 ]; then\n  VANILLACORD_URL=https://src.me1312.net/jenkins/job/VanillaCord/job/1.7.10/lastSuccessfulBuild/artifact/artifacts/VanillaCord.jar\nfi\n\nif { [ \"$MAJOR_VERSION\" -eq 1 ] && [ \"$MINOR_VERSION\" -eq 7 ] && [ \"$PATCH_VERSION\" -lt 10 ]; } || { [ \"$MAJOR_VERSION\" -eq 1 ] && [ \"$MINOR_VERSION\" -lt 7 ]; } then\n  echo \"VanillaCord is only supported on Minecraft 1.7.10 or higher! You cannot use it with $INSTALLING_VERSION.\"\n  exit 1\nfi\n\ncurl -fL -o vanillacord.jar \"$VANILLACORD_URL\" || exit \"$?\"\njava -jar vanillacord.jar \"$INSTALLING_VERSION\" || exit \"$?\"\n\nrm -f vanillacord.jar || exit \"$?\"\nrm -rf in || exit \"$?\"\nmv out/*.jar \"$SERVER_JARFILE\" || exit \"$?\"\nrm -rf out || exit \"$?\"",
+            "container": "eclipse-temurin:8-jdk-jammy",
+            "entrypoint": "bash"
+        }
+    },
+    "variables": [
+        {
+            "name": "Server Jar File",
+            "description": "The name of the server jarfile to run the server with.",
+            "env_variable": "SERVER_JARFILE",
+            "default_value": "server.jar",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|regex:/^([\\w\\d._-]+)(\\.jar)$/",
+            "field_type": "text"
+        },
+        {
+            "name": "Server Version",
+            "description": "The version of Minecraft Vanilla to install. Use \"latest\" to install the latest version.",
+            "env_variable": "VANILLA_VERSION",
+            "default_value": "latest",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|between:3,15",
+            "field_type": "text"
+        }
+    ]
+}

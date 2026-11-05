@@ -1,0 +1,87 @@
+{
+    "_comment": "DO NOT EDIT: FILE GENERATED AUTOMATICALLY BY PTERODACTYL PANEL - PTERODACTYL.IO",
+    "meta": {
+        "version": "PTDL_v2",
+        "update_url": null
+    },
+    "exported_at": "2026-04-26T20:16:38+02:00",
+    "name": "Fabric",
+    "author": "accounts@bofanodes.io",
+    "description": "Fabric is a modular modding toolchain targeting Minecraft 1.14 and above, including snapshots.",
+    "features": [
+        "eula",
+        "java_version",
+        "pid_limit"
+    ],
+    "ports": [
+        25565
+    ],
+    "docker_images": {
+        "Java 25": "ghcr.io/ptero-eggs/yolks:java_25",
+        "java 24": "ghcr.io/ptero-eggs/yolks:java_24",
+        "java 23": "ghcr.io/ptero-eggs/yolks:java_23",
+        "java 22": "ghcr.io/ptero-eggs/yolks:java_22",
+        "java 21": "ghcr.io/ptero-eggs/yolks:java_21",
+        "Java 17": "ghcr.io/ptero-eggs/yolks:java_17",
+        "Java 16": "ghcr.io/ptero-eggs/yolks:java_16",
+        "Java 11": "ghcr.io/ptero-eggs/yolks:java_11",
+        "Java 8": "ghcr.io/ptero-eggs/yolks:java_8"
+    },
+    "file_denylist": [],
+    "startup": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}}",
+    "config": {
+        "files": "{\r\n    \"server.properties\": {\r\n        \"parser\": \"properties\",\r\n        \"find\": {\r\n            \"server-ip\": \"0.0.0.0\",\r\n            \"server-port\": \"{{server.build.default.port}}\"\r\n        }\r\n    }\r\n}",
+        "startup": "{\r\n    \"done\": \")! For help, type \",\r\n    \"userInteraction\": [\r\n        \"Go to eula.txt for more info.\"\r\n    ]\r\n}",
+        "logs": "{\r\n    \"custom\": false,\r\n    \"location\": \"logs/latest.log\"\r\n}",
+        "stop": "stop"
+    },
+    "scripts": {
+        "installation": {
+            "script": "#!/bin/bash\n# Fabric MC Installation Script\n#\n# Server Files: /mnt/server\n# Catalyst maintained copy: critical failures must not end in a success echo.\nset -o pipefail\n\napt-get update || exit \"$?\"\napt-get install -y --no-install-recommends ca-certificates curl jq unzip dos2unix wget || exit \"$?\"\nmkdir -p /mnt/server || exit \"$?\"\ncd /mnt/server || exit \"$?\"\n\n# Enable snapshots. jq -e also rejects an empty selection; pipefail preserves\n# curl's status when metadata retrieval fails.\nif [ -z \"$MC_VERSION\" ] || [ \"$MC_VERSION\" == \"latest\" ]; then\n  MC_VERSION=$(curl -fsSL https://meta.fabricmc.net/v2/versions/game | jq -er 'first(.[] | select(.stable == true) | .version) // empty') || exit \"$?\"\nelif [ \"$MC_VERSION\" == \"snapshot\" ]; then\n  MC_VERSION=$(curl -fsSL https://meta.fabricmc.net/v2/versions/game | jq -er 'first(.[] | select(.stable == false) | .version) // empty') || exit \"$?\"\nfi\n\nif [ -z \"$FABRIC_VERSION\" ] || [ \"$FABRIC_VERSION\" == \"latest\" ]; then\n  FABRIC_VERSION=$(curl -fsSL https://meta.fabricmc.net/v2/versions/installer | jq -er '.[0].version // empty') || exit \"$?\"\nfi\n\nif [ -z \"$LOADER_VERSION\" ] || [ \"$LOADER_VERSION\" == \"latest\" ]; then\n  LOADER_VERSION=$(curl -fsSL https://meta.fabricmc.net/v2/versions/loader | jq -er 'first(.[] | select(.stable == true) | .version) // empty') || exit \"$?\"\nelif [ \"$LOADER_VERSION\" == \"snapshot\" ]; then\n  LOADER_VERSION=$(curl -fsSL https://meta.fabricmc.net/v2/versions/loader | jq -er 'first(.[] | select(.stable == false) | .version) // empty') || exit \"$?\"\nfi\n\nwget -O fabric-installer.jar \"https://maven.fabricmc.net/net/fabricmc/fabric-installer/$FABRIC_VERSION/fabric-installer-$FABRIC_VERSION.jar\" || exit \"$?\"\njava -jar fabric-installer.jar server -mcversion \"$MC_VERSION\" -loader \"$LOADER_VERSION\" -downloadMinecraft || exit \"$?\"\nmv server.jar minecraft-server.jar || exit \"$?\"\nmv fabric-server-launch.jar server.jar || exit \"$?\"\nprintf '%s\\n' \"serverJar=minecraft-server.jar\" > fabric-server-launcher.properties || exit \"$?\"\necho \"Install Complete\"",
+            "container": "eclipse-temurin:21-jdk-jammy",
+            "entrypoint": "bash"
+        }
+    },
+    "variables": [
+        {
+            "name": "Server Jar File",
+            "description": "The name of the server jarfile to run the server with.",
+            "env_variable": "SERVER_JARFILE",
+            "default_value": "server.jar",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|regex:/^([\\w\\d._-]+)(\\.jar)$/",
+            "field_type": "text"
+        },
+        {
+            "name": "Minecraft Version",
+            "description": "The version of Minecraft to install. Use \"latest\" to install the latest version, or use \"snapshot\" to install the latest snapshot.",
+            "env_variable": "MC_VERSION",
+            "default_value": "latest",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|between:3,15",
+            "field_type": "text"
+        },
+        {
+            "name": "Fabric Version",
+            "description": "The version of Fabric to install.",
+            "env_variable": "FABRIC_VERSION",
+            "default_value": "latest",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|between:3,15",
+            "field_type": "text"
+        },
+        {
+            "name": "Fabric Loader Version",
+            "description": "The version of Fabric Loader to install.",
+            "env_variable": "LOADER_VERSION",
+            "default_value": "latest",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|between:3,15",
+            "field_type": "text"
+        }
+    ]
+}

@@ -1,0 +1,45 @@
+{
+    "_comment": "DO NOT EDIT: FILE GENERATED AUTOMATICALLY BY PTERODACTYL PANEL - PTERODACTYL.IO",
+    "meta": {
+        "version": "PTDL_v2",
+        "update_url": null
+    },
+    "exported_at": "2024-04-01T12:29:54+02:00",
+    "name": "starmade",
+    "author": "contact@hunters-tavern.de",
+    "description": "starmade",
+    "features": null,
+    "ports": [
+        4242
+    ],
+    "docker_images": {
+        "ghcr.io/ptero-eggs/yolks:java_16": "ghcr.io/ptero-eggs/yolks:java_16"
+    },
+    "file_denylist": [],
+    "startup": "java -Xms128m -Xmx{{SERVER_MEMORY}}m -jar {{SERVER_JARFILE}} -server -port:{{SERVER_PORT}}",
+    "config": {
+        "files": "{}",
+        "startup": "{\r\n    \"done\": \"SenableGameState(1)\"\r\n}",
+        "logs": "{}",
+        "stop": "/shutdown 0"
+    },
+    "scripts": {
+        "installation": {
+            "script": "#!/bin/bash\n# starmade Installation Script\n#\n# Server Files: /mnt/server\n# Catalyst maintained copy: install wget before use and propagate every\n# download, installer and file-operation failure.\napt-get update || exit \"$?\"\napt-get install -y --no-install-recommends ca-certificates curl wget || exit \"$?\"\n\nmkdir -p /mnt/server || exit \"$?\"\ncd /mnt/server || exit \"$?\"\n\nwget -O starter.jar https://files.star-made.org/StarMade-Starter.jar || exit \"$?\"\n\njava -jar starter.jar -nogui || exit \"$?\"\n\nmv ./StarMade/* ./ || exit \"$?\"\nrm -r ./StarMade || exit \"$?\"\n\n## install end\necho \"-----------------------------------------\"\necho \"Installation completed...\"\necho \"-----------------------------------------\"",
+            "container": "eclipse-temurin:16-jdk-focal",
+            "entrypoint": "bash"
+        }
+    },
+    "variables": [
+        {
+            "name": "Server Jarfile",
+            "description": "",
+            "env_variable": "SERVER_JARFILE",
+            "default_value": "StarMade.jar",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:64",
+            "field_type": "text"
+        }
+    ]
+}
